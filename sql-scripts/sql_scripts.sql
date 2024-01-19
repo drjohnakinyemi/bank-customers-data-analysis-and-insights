@@ -393,196 +393,6 @@ FROM Account;
 
 
 
-/**************************************************
-ANALYZE DATA. ANSWER QUESTIONS.
-**************************************************/
-
-/*
--- Customer Segmentation with:
-    * Segment Number, 
-    * Average Amount, and 
-    * List of AccountIDs
--- Identify different segments of customers based on their:
-    * transaction behavior, and
-    * account types.
-*/
-
-WITH CustomerSegments AS (
-    SELECT AccountID,
-        AVG(Amount) AS AvgTransactionAmount,
-        NTILE(5) OVER (ORDER BY AVG(Amount)) AS Segment
-    FROM BankTransaction
-    GROUP BY AccountID
-)
-SELECT Segment,
-    AVG(AvgTransactionAmount) AS AverageAmount,
-    STRING_AGG(AccountID, ', ') AS AccountIDsInSegment
-FROM CustomerSegments
-GROUP BY Segment
-ORDER BY Segment;
-
-
--- Districts with the most and least accounts + 
--- average number of accounts per district.
-WITH DistrictAccountCounts AS (
-    SELECT DistrictID,
-        COUNT(DISTINCT AccountID) AS NumAccounts
-    FROM Account
-    GROUP BY DistrictID
-)
-SELECT
-    (SELECT TOP 1 DistrictID FROM DistrictAccountCounts ORDER BY NumAccounts) AS DistrictWithMinAccounts,
-    (SELECT MIN(NumAccounts) FROM DistrictAccountCounts) AS MinNoOfAccounts,
-    (SELECT TOP 1 DistrictID FROM DistrictAccountCounts ORDER BY NumAccounts DESC) AS DistrictWithMaxAccounts,
-    (SELECT MAX(NumAccounts) FROM DistrictAccountCounts) AS MaxNoOfAccounts,
-    (SELECT AVG(NumAccounts * 1.0) FROM DistrictAccountCounts) AS AvgNoOfAccounts;
-
-
--- Districts with the highest and lowest loan payments + 
--- average loan payments per district.
-WITH DistrictLoanPayments AS (
-    SELECT
-        A.DistrictID,
-        SUM(L.Payments) AS TotalLoanPayments
-    FROM
-        Account A
-    JOIN
-        Loan L ON A.AccountID = L.AccountID
-    GROUP BY
-        A.DistrictID
-)
-SELECT
-    -- District with the lowest loan payments
-    (SELECT TOP 1 DistrictID FROM DistrictLoanPayments ORDER BY TotalLoanPayments) AS DistrictWithMinLoanPayments,
-    
-    -- Minimum loan payments in any district
-    (SELECT MIN(TotalLoanPayments) FROM DistrictLoanPayments) AS MinLoanPayments,
-    
-    -- District with the highest loan payments
-    (SELECT TOP 1 DistrictID FROM DistrictLoanPayments ORDER BY TotalLoanPayments DESC) AS DistrictWithMaxLoanPayments,
-    
-    -- Maximum loan payments in any district
-    (SELECT MAX(TotalLoanPayments) FROM DistrictLoanPayments) AS MaxLoanPayments,
-    
-    -- Average loan payments per district
-    (SELECT AVG(TotalLoanPayments * 1.0) FROM DistrictLoanPayments) AS AvgLoanPayments;
-
-
-
--- Accounts with the highest and lowest transaction amounts + 
--- average transaction amount.
-WITH AccountTransactionAmounts AS (
-    SELECT
-        AccountID,
-        MAX(Amount) AS HighestTransactionAmount,
-        MIN(Amount) AS LowestTransactionAmount
-    FROM
-        BankTransaction
-    GROUP BY
-        AccountID
-)
-SELECT
-    -- Account with the highest transaction amount
-    (
-        SELECT TOP 1 AccountID 
-        FROM AccountTransactionAmounts 
-        ORDER BY HighestTransactionAmount DESC) AS AccountWithMaxTransactionAmount,
-    
-    -- Highest transaction amount in any account
-    (
-        SELECT MAX(HighestTransactionAmount) 
-        FROM AccountTransactionAmounts) AS MaxTransactionAmount,
-    
-    -- Account with the lowest transaction amount
-    (
-        SELECT TOP 1 AccountID 
-        FROM AccountTransactionAmounts 
-        ORDER BY LowestTransactionAmount) AS AccountWithMinTransactionAmount,
-    
-    -- Lowest transaction amount in any account
-    (
-        SELECT MIN(LowestTransactionAmount) 
-        FROM AccountTransactionAmounts) AS MinTransactionAmount,
-    
-    -- Average transaction amount per account
-    (
-        SELECT AVG(HighestTransactionAmount * 1.0) 
-        FROM AccountTransactionAmounts) AS AvgTransactionAmount;
-
-
-
--- Accounts with the highest and lowest transaction frequencies +
--- average transaction frequency.
-WITH AccountTransactionFrequency AS (
-    SELECT
-        AccountID,
-        COUNT(*) AS TransactionFrequency
-    FROM
-        BankTransaction
-    GROUP BY
-        AccountID
-)
-SELECT
-    -- Account with the highest transaction frequency
-    (SELECT TOP 1 AccountID FROM AccountTransactionFrequency ORDER BY TransactionFrequency DESC) AS AccountWithMaxTransactionFrequency,
-    
-    -- Highest transaction frequency in any account
-    (SELECT MAX(TransactionFrequency) FROM AccountTransactionFrequency) AS MaxTransactionFrequency,
-    
-    -- Account with the lowest transaction frequency
-    (SELECT TOP 1 AccountID FROM AccountTransactionFrequency ORDER BY TransactionFrequency) AS AccountWithMinTransactionFrequency,
-    
-    -- Lowest transaction frequency in any account
-    (SELECT MIN(TransactionFrequency) FROM AccountTransactionFrequency) AS MinTransactionFrequency,
-    
-    -- Average transaction frequency per account
-    (SELECT AVG(TransactionFrequency * 1.0) FROM AccountTransactionFrequency) AS AvgTransactionFrequency;
-
-
-
-
-/* High-Value Customers: 
-    * Who are our high-value customers, and what are their characteristics?
-    -- A high value account has tan amount in the bank > average sum of all amounts.
-    -- High-value clients based on various criteria.
-*/
-
-WITH HighValueClients AS (
-    SELECT DISTINCT D.ClientID, SUM(BO.Amount) AS HighValueClientByBankOrderAmount
-    FROM BankOrder BO
-    JOIN Account A ON BO.AccountID = A.AccountID
-    JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
-),
-HighValueClientsByLoan AS (
-    SELECT DISTINCT D.ClientID, SUM(L.Amount) AS HighValueClientByLoanAmount
-    FROM Loan L
-    JOIN Account A ON L.AccountID = A.AccountID
-    JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
-),
-HighValueClientsByTransaction AS (
-    SELECT DISTINCT D.ClientID, SUM(BT.Amount) AS HighValueClientByBankTransactionAmount
-    FROM BankTransaction BT
-    JOIN Account A ON BT.AccountID = A.AccountID
-    JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
-)
--- Combine results using outer joins.
-SELECT
-    COALESCE(HVC.ClientID, HVL.ClientID, HVBT.ClientID) AS ClientID,
-    HVC.HighValueClientByBankOrderAmount,
-    HVL.HighValueClientByLoanAmount,
-    HVBT.HighValueClientByBankTransactionAmount
-FROM
-    HighValueClients HVC
-FULL OUTER JOIN
-    HighValueClientsByLoan HVL ON HVC.ClientID = HVL.ClientID
-FULL OUTER JOIN
-    HighValueClientsByTransaction HVBT ON HVC.ClientID = HVBT.ClientID;
-
-
-
 /* BankTransation table has an Operation field
 	it provides a description of the type of transation done
 	the field's values are difficult to easily process.
@@ -695,6 +505,199 @@ JOIN LoanStatus LS ON L.Status = LS.StatusID;
 -- Drop the Status column from the Loan table
 ALTER TABLE Loan
 DROP COLUMN Status;
+
+
+
+
+
+
+
+
+/**************************************************
+ANALYZE DATA. ANSWER QUESTIONS.
+**************************************************/
+
+/*
+-- Customer Segmentation with:
+    * Segment Number, 
+    * Average Amount, and 
+    * List of AccountIDs
+-- Identify different segments of customers based on their:
+    * transaction behavior, and
+    * account types.
+*/
+
+WITH CustomerSegments AS (
+    SELECT AccountID,
+        AVG(Amount) AS AvgTransactionAmount,
+        NTILE(5) OVER (ORDER BY AVG(Amount)) AS Segment
+    FROM BankTransaction
+    GROUP BY AccountID
+)
+SELECT Segment,
+    AVG(AvgTransactionAmount) AS AverageAmount,
+    STRING_AGG(AccountID, ', ') AS AccountIDsInSegment
+FROM CustomerSegments
+GROUP BY Segment
+ORDER BY Segment;
+
+
+-- Districts with the most and least accounts + 
+-- average number of accounts per district.
+WITH DistrictAccountCounts AS (
+    SELECT DistrictID,
+        COUNT(DISTINCT AccountID) AS NumAccounts
+    FROM Account
+    GROUP BY DistrictID
+)
+SELECT
+    (SELECT TOP 1 DistrictID FROM DistrictAccountCounts ORDER BY NumAccounts) AS DistrictWithMinAccounts,
+    (SELECT MIN(NumAccounts) FROM DistrictAccountCounts) AS MinNoOfAccounts,
+    (SELECT TOP 1 DistrictID FROM DistrictAccountCounts ORDER BY NumAccounts DESC) AS DistrictWithMaxAccounts,
+    (SELECT MAX(NumAccounts) FROM DistrictAccountCounts) AS MaxNoOfAccounts,
+    (SELECT AVG(NumAccounts * 1.0) FROM DistrictAccountCounts) AS AvgNoOfAccounts;
+
+
+-- Districts with the highest and lowest loan payments + 
+-- average loan payments per district.
+WITH DistrictLoanPayments AS (
+    SELECT
+        A.DistrictID,
+        SUM(L.Payments) AS TotalLoanPayments
+    FROM
+        Account A
+    JOIN
+        Loan L ON A.AccountID = L.AccountID
+    GROUP BY
+        A.DistrictID
+)
+SELECT
+    -- District with the lowest loan payments
+    (SELECT TOP 1 DistrictID FROM DistrictLoanPayments ORDER BY TotalLoanPayments) AS DistrictWithMinLoanPayments,
+    
+    -- Minimum loan payments in any district
+    (SELECT MIN(TotalLoanPayments) FROM DistrictLoanPayments) AS MinLoanPayments,
+    
+    -- District with the highest loan payments
+    (SELECT TOP 1 DistrictID FROM DistrictLoanPayments ORDER BY TotalLoanPayments DESC) AS DistrictWithMaxLoanPayments,
+    
+    -- Maximum loan payments in any district
+    (SELECT MAX(TotalLoanPayments) FROM DistrictLoanPayments) AS MaxLoanPayments,
+    
+    -- Average loan payments per district
+    (SELECT AVG(TotalLoanPayments * 1.0) FROM DistrictLoanPayments) AS AvgLoanPayments;
+
+
+
+-- Accounts with the highest, lowest, and average transaction amounts.
+WITH AccountTransactionAmounts AS (
+    SELECT
+        AccountID,
+        MAX(Amount) AS HighestTransactionAmount,
+        MIN(Amount) AS LowestTransactionAmount
+    FROM
+        BankTransaction
+    GROUP BY
+        AccountID
+)
+SELECT
+    -- Account with the highest transaction amount
+    (
+        SELECT TOP 1 AccountID 
+        FROM AccountTransactionAmounts 
+        ORDER BY HighestTransactionAmount DESC) AS AccountWithMaxTransactionAmount,
+    
+    -- Highest transaction amount in any account
+    (
+        SELECT MAX(HighestTransactionAmount) 
+        FROM AccountTransactionAmounts) AS MaxTransactionAmount,
+    
+    -- Account with the lowest transaction amount
+    (
+        SELECT TOP 1 AccountID 
+        FROM AccountTransactionAmounts 
+        ORDER BY LowestTransactionAmount) AS AccountWithMinTransactionAmount,
+    
+    -- Lowest transaction amount in any account
+    (
+        SELECT MIN(LowestTransactionAmount) 
+        FROM AccountTransactionAmounts) AS MinTransactionAmount,
+    
+    -- Average transaction amount per account
+    (
+        SELECT AVG(HighestTransactionAmount * 1.0) 
+        FROM AccountTransactionAmounts) AS AvgTransactionAmount;
+
+
+
+-- Accounts with the highest, lowest, and average transaction frequencies.
+WITH AccountTransactionFrequency AS (
+    SELECT
+        AccountID,
+        COUNT(*) AS TransactionFrequency
+    FROM
+        BankTransaction
+    GROUP BY
+        AccountID
+)
+SELECT
+    -- Account with the highest transaction frequency
+    (SELECT TOP 1 AccountID FROM AccountTransactionFrequency ORDER BY TransactionFrequency DESC) AS AccountWithMaxTransactionFrequency,
+    
+    -- Highest transaction frequency in any account
+    (SELECT MAX(TransactionFrequency) FROM AccountTransactionFrequency) AS MaxTransactionFrequency,
+    
+    -- Account with the lowest transaction frequency
+    (SELECT TOP 1 AccountID FROM AccountTransactionFrequency ORDER BY TransactionFrequency) AS AccountWithMinTransactionFrequency,
+    
+    -- Lowest transaction frequency in any account
+    (SELECT MIN(TransactionFrequency) FROM AccountTransactionFrequency) AS MinTransactionFrequency,
+    
+    -- Average transaction frequency per account
+    (SELECT AVG(TransactionFrequency * 1.0) FROM AccountTransactionFrequency) AS AvgTransactionFrequency;
+
+
+/* High-Value Customers: 
+    * Who are our high-value customers, and what are their characteristics?
+    -- A high value account has tan amount in the bank > average sum of all amounts.
+    -- High-value clients based on various criteria.
+*/
+
+WITH HighValueClients AS (
+    SELECT DISTINCT D.ClientID, SUM(BO.Amount) AS HighValueClientByBankOrderAmount
+    FROM BankOrder BO
+    JOIN Account A ON BO.AccountID = A.AccountID
+    JOIN Disposition D ON A.AccountID = D.AccountID
+    GROUP BY D.ClientID
+),
+HighValueClientsByLoan AS (
+    SELECT DISTINCT D.ClientID, SUM(L.Amount) AS HighValueClientByLoanAmount
+    FROM Loan L
+    JOIN Account A ON L.AccountID = A.AccountID
+    JOIN Disposition D ON A.AccountID = D.AccountID
+    GROUP BY D.ClientID
+),
+HighValueClientsByTransaction AS (
+    SELECT DISTINCT D.ClientID, SUM(BT.Amount) AS HighValueClientByBankTransactionAmount
+    FROM BankTransaction BT
+    JOIN Account A ON BT.AccountID = A.AccountID
+    JOIN Disposition D ON A.AccountID = D.AccountID
+    GROUP BY D.ClientID
+)
+-- Combine results using outer joins.
+SELECT
+    COALESCE(HVC.ClientID, HVL.ClientID, HVBT.ClientID) AS ClientID,
+    HVC.HighValueClientByBankOrderAmount,
+    HVL.HighValueClientByLoanAmount,
+    HVBT.HighValueClientByBankTransactionAmount
+FROM
+    HighValueClients HVC
+FULL OUTER JOIN
+    HighValueClientsByLoan HVL ON HVC.ClientID = HVL.ClientID
+FULL OUTER JOIN
+    HighValueClientsByTransaction HVBT ON HVC.ClientID = HVBT.ClientID;
+
+
 
 
 -- Group loans based on StatusID and calculate count, sum, and average
