@@ -658,46 +658,78 @@ SELECT
 
 
 /* High-Value Customers: 
-    * Who are our high-value customers, and what are their characteristics?
+    -- Who are our high-value customers, and what are their characteristics?
     -- A high value account has tan amount in the bank > average sum of all amounts.
     -- High-value clients based on various criteria.
 */
-
-WITH HighValueClients AS (
-    SELECT DISTINCT D.ClientID, SUM(BO.Amount) AS HighValueClientByBankOrderAmount
-    FROM BankOrder BO
-    JOIN Account A ON BO.AccountID = A.AccountID
-    JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
+-- High-Valued Accounts Based on Loan Amount
+WITH AverageLoanAmount AS (
+	SELECT AVG(L.Amount) AS AverageLoan
+	FROM Loan L
 ),
 HighValueClientsByLoan AS (
-    SELECT DISTINCT D.ClientID, SUM(L.Amount) AS HighValueClientByLoanAmount
-    FROM Loan L
-    JOIN Account A ON L.AccountID = A.AccountID
-    JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
+	SELECT D.ClientID, A.AccountID, SUM(L.Amount) AS TotalLoanAmount
+	FROM Loan L
+	JOIN Account A ON L.AccountID = A.AccountID
+	JOIN Disposition D ON A.AccountID = D.AccountID
+	GROUP BY D.ClientID, A.AccountID
+)
+SELECT 
+	HVL.ClientID, 
+	HVL.AccountID, 
+	HVL.TotalLoanAmount
+FROM 
+	HighValueClientsByLoan HVL
+JOIN 
+	AverageLoanAmount AL ON HVL.TotalLoanAmount > AL.AverageLoan
+ORDER BY 
+	HVL.TotalLoanAmount DESC;
+
+-- High-Valued Accounts Based on Transaction Amount
+WITH AverageTransactionAmount AS (
+    SELECT AVG(BT.Amount) AS AverageTransaction
+    FROM BankTransaction BT
 ),
 HighValueClientsByTransaction AS (
-    SELECT DISTINCT D.ClientID, SUM(BT.Amount) AS HighValueClientByBankTransactionAmount
+    SELECT D.ClientID, A.AccountID, SUM(BT.Amount) AS TotalTransactionAmount
     FROM BankTransaction BT
     JOIN Account A ON BT.AccountID = A.AccountID
     JOIN Disposition D ON A.AccountID = D.AccountID
-    GROUP BY D.ClientID
+    GROUP BY D.ClientID, A.AccountID
 )
--- Combine results using outer joins.
 SELECT
-    COALESCE(HVC.ClientID, HVL.ClientID, HVBT.ClientID) AS ClientID,
-    HVC.HighValueClientByBankOrderAmount,
-    HVL.HighValueClientByLoanAmount,
-    HVBT.HighValueClientByBankTransactionAmount
-FROM
-    HighValueClients HVC
-FULL OUTER JOIN
-    HighValueClientsByLoan HVL ON HVC.ClientID = HVL.ClientID
-FULL OUTER JOIN
-    HighValueClientsByTransaction HVBT ON HVC.ClientID = HVBT.ClientID;
+    HVBT.ClientID,
+    HVBT.AccountID,
+    HVBT.TotalTransactionAmount
+FROM 
+    HighValueClientsByTransaction HVBT
+JOIN AverageTransactionAmount ATA 
+    ON HVBT.TotalTransactionAmount > ATA.AverageTransaction
+ORDER BY 
+    HVBT.TotalTransactionAmount DESC;
 
-
+-- High-Valued Accounts Based on Order Amount
+WITH AverageBankOrderAmount AS (
+    SELECT AVG(BO.Amount) AS AverageBankOrder
+    FROM BankOrder BO
+),
+HighValueClientsByBankOrder AS (
+    SELECT D.ClientID, A.AccountID, SUM(BO.Amount) AS TotalBankOrderAmount
+    FROM BankOrder BO
+    JOIN Account A ON BO.AccountID = A.AccountID
+    JOIN Disposition D ON A.AccountID = D.AccountID
+    GROUP BY D.ClientID, A.AccountID
+)
+SELECT
+    HVBO.ClientID,
+    HVBO.AccountID,
+    HVBO.TotalBankOrderAmount
+FROM 
+    HighValueClientsByBankOrder HVBO
+JOIN AverageBankOrderAmount ABA 
+    ON HVBO.TotalBankOrderAmount > ABA.AverageBankOrder
+ORDER BY 
+    HVBO.TotalBankOrderAmount DESC;
 
 
 -- Group loans based on StatusID and calculate count, sum, and average
